@@ -1,0 +1,10 @@
+*.[do]
+*.eep
+*.elf
+*.lss
+*.map
+*.mk
+*.srec
+makefile
+*.cproj
+*.xml
