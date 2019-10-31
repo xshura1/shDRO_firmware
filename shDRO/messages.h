@@ -15,8 +15,8 @@
 
 
 const static char MSG_PRODUCT_NAME[]	PROGMEM = " shDRO"; 
-const static char MSG_VERSION_NO[]		PROGMEM = "ver. 0.1";
-const static char MSG_VERSION_DATA[]	PROGMEM = "02.04.2019";
+const static char MSG_VERSION_NO[]		PROGMEM = "ver. 0.2";
+const static char MSG_VERSION_DATA[]	PROGMEM = "01.11.2019";
 
 const static char MSG_EXIT[]			PROGMEM = "Exit";
 
@@ -35,7 +35,7 @@ const static char MSG_CLRF[]			PROGMEM = "\r\n";
 
 //-----------------------------------------------------------------------------------------------------------
 //----------------------для индикаторов----------------------------------------------------------------------
-const static char LMSG_SCAN[]			PROGMEM = "SCAn   ";
+const static char LMSG_SCAN[]			PROGMEM = "SCAn  ";
 const static char LMSG_SCAN_CH[]		PROGMEM = "SCAn.Ch %d";
 //-----------------------------------------------------------------------------------------------------------
 

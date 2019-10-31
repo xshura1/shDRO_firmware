@@ -147,7 +147,7 @@ void init_led(){
 			for (uint8_t k = 0; k<8; k++){
 				setLed(i, j, k, 1);	
 				#ifndef DEBUG
-				_delay_ms(1);
+				_delay_ms(10);
 				#endif
 			}
 	

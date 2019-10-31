@@ -135,6 +135,7 @@ cmd_result_func_e cmd_keyboard_info(cmd_argument_s * args, uint8_t args_num){
 					keyboard.adc_mappings[i].key_code,
 					keyboard.adc_mappings[i].channel+ADC_CH_BEGIN,
 					keyboard.adc_mappings[i].adc_value);
+		_delay_ms(1);			
 		fprintf_P(file, MSG_CLRF);
 	}
 	

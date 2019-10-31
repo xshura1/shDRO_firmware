@@ -20,17 +20,17 @@
 #include "utils.h"
 #include "transmission_data.h"
 #include "messages.h"
-#include "shared_memory.h"
 #include "eeprom.h"
-#include "timers.h"
 
 
-#define ADC_TOLERANCE			2	// минимальная разница между значениями соседними значениями ADC
+
+#define ADC_TOLERANCE			3	// минимальная разница между значениями соседними значениями ADC
 									// если разница меньше, то считаем, что нажали уже ранее обработанную кнопку
 
-// номер опрашиваемого канала adc
-volatile uint8_t adc_ch = 0;
+#define MAX_COUNT_SAMPLES		64 
 
+// номер опрашиваемого канала adc
+volatile	uint8_t adc_ch			= 0;
 #define ADC_CH (adc_ch - ADC_CH_BEGIN)
 
 
@@ -49,110 +49,143 @@ typedef enum {
 uint8_t load_keyboard_from_eeprom(void);
 uint8_t get_key_code(uint8_t adc_value);
 
+
 // время выполнения ~5мкс.
 ISR(ADC_vect){
-	const uint8_t max_cnt	= 4;
+	
 	uint8_t new_adc			= ADCH;
 	uint8_t a_ch			= ADC_CH;
 	uint8_t new_code		= KEY_NULL;
 	uint8_t is_need_change_channel = 1;
-	
-	static uint8_t old_code;
-	static uint8_t old_adc;
-	
-	if (new_adc > ADC_MAX_NULL_VALUE)
-		keyboard.is_pressed_key |= (1<<a_ch);
-	else
-		keyboard.is_pressed_key &= ~( 1 << a_ch);
-	
-	if (!dro_config.is_logic_analyzer){
-		new_code = get_key_code(new_adc);
+	uint8_t tmp_adc = 0;
 		
-		uint8_t cnt = 0;
-		if (keyboard.is_scan_key){
-			is_need_change_channel = 0;
-			cnt = TIME_OFFSET_8(keyboard.cnt_ms, timer_cnt_1ms);
-			if (cnt > 10){
-				keyboard.cnt_key--;
-				keyboard.cnt_ms = timer_cnt_1ms;
-				
-				if (!keyboard.is_repair){
-					if (new_code != old_code){
-						keyboard.cnt_key = max_cnt;
-						old_code = new_code;
-					}
-				}
-				else
-					if (new_adc != old_adc){
-						keyboard.cnt_key = max_cnt;
-						old_adc = new_adc;
-					}	
-			}
-				
-			if (keyboard.cnt_key == 0){
-				if (keyboard.is_repair){
-					if (old_adc > ADC_MAX_NULL_VALUE){
-						keyboard.adc_value = old_adc;
-						keyboard.adc_channel = a_ch;
-					}
-				}
-				else{
-					if (keyboard.old_key_codes[a_ch] != old_code){
-						keyboard.old_key_codes[a_ch] = old_code;
-						if (old_code != KEY_NULL){
-							keyboard.key_code = old_code;
-							keyboard.is_processed = 0;
-						}
-					}
-				}
-									
-				keyboard.cnt_key = max_cnt;
-				keyboard.is_scan_key = 0;
-			}
+	static uint8_t	old_code;
+	static uint8_t	old_ch;
+	static uint8_t	time_cnt_ms;
+	static uint8_t	cnt_sampl;
+	static uint8_t	cnt_sampl_code;
+	static uint16_t sum_code;
+	static uint8_t	cnt_repeat_code;
+	
+	
+	is_need_change_channel = 0;
+	
+	if (new_adc < ADC_MAX_NULL_VALUE){
+		new_adc = 0;
+	}
+	
+	cnt_sampl++;
+	
+	if (cnt_sampl < MAX_COUNT_SAMPLES){
+		sum_code+=new_adc;
+	}
+	
+	if (cnt_sampl == MAX_COUNT_SAMPLES){
+		
+		tmp_adc = sum_code/cnt_sampl;
+		sum_code = 0;
+		cnt_sampl = 0;
+		
+		is_need_change_channel = 1;
+		
+		keyboard.adc_value = tmp_adc;
+		keyboard.adc_channel = a_ch;
+		
+		if (tmp_adc > ADC_MAX_NULL_VALUE){
+			keyboard.is_pressed_key |= (1<<a_ch);
 		}
 		else{
-			keyboard.is_scan_key = 1;
-			keyboard.cnt_ms = timer_cnt_1ms;
-			old_code = new_code;
-			old_adc = new_adc;
-			keyboard.cnt_key = max_cnt;
+			keyboard.is_pressed_key &= ~( 1 << a_ch);
+		}
+		
+		
+		if (keyboard.is_repair){
+			repair_keyboard(0);
+		}
+		else{
+			if (!keyboard.is_processed){
+				is_need_change_channel = 0;
+				new_code = get_key_code(tmp_adc);
+				
+				if (old_code != new_code){
+					cnt_sampl_code = 0;
+				}
+				else{
+					cnt_sampl_code++;
+				}
+				
+				old_code = new_code;
+				
+				if (cnt_sampl_code > 0){
+					uint8_t time_10_ms = TIME_KEY_REPEAT_10_ms;
+					
+					if (cnt_repeat_code > 10)
+						time_10_ms = time_10_ms / 10;
+					else
+						if (cnt_repeat_code > 4)	
+							time_10_ms = time_10_ms / 2;
+					
+					
+					if ( ((old_code == KEY_NULL) && (old_ch == a_ch)) || 
+						 ((old_code != KEY_NULL) && (keyboard.key_code != old_code)) ||
+						 ((TIME_OFFSET_8(time_cnt_ms, timer_cnt_10ms) > time_10_ms) && (keyboard.key_code == old_code)) ){
+						
+						if (keyboard.key_code == old_code)
+							cnt_repeat_code++;
+						else
+							cnt_repeat_code = 0;	
+							
+						
+						keyboard.key_code = old_code;
+						time_cnt_ms = timer_cnt_10ms;
+						old_ch = a_ch;
+						old_code = KEY_NULL;
+						keyboard.is_processed = 1;
+					}
+						
+					
+					is_need_change_channel = 1;
+				}
+			}
 		}
 	}
-			
-	start_keyboard(is_need_change_channel);
 	
-	if (keyboard.is_repair)
-		repair_or_test_keyboard(0);
+	start_keyboard(is_need_change_channel);
 }
+
 
 uint8_t get_key_code(uint8_t adc_value){
 	uint8_t result = 0;
-	for (uint8_t i=0; i<KEY_COUNT; i++)
-		if (keyboard.adc_mappings[i].channel == ADC_CH)
-			if (abs(keyboard.adc_mappings[i].adc_value - adc_value) <= ADC_TOLERANCE){	
+	for (uint8_t i=0; i<KEY_COUNT; i++){
+		if (keyboard.adc_mappings[i].channel == ADC_CH){
+			if (adc_value >= (keyboard.adc_mappings[i].adc_value - ADC_TOLERANCE)){
 				result = keyboard.adc_mappings[i].key_code;
 				break;
 			}
-	return result;	
+		}
+	}
+	return result;
 }
 
 device_led_e get_ADC_led(uint8_t adc_ch_no){
-	if (adc_ch_no <= LED_2)
+	if (adc_ch_no <= LED_2){
 		return LED_2 + ADC_CH_BEGIN - adc_ch_no;
-	else
-		return LED_2 - (adc_ch_no - ADC_CH_BEGIN);	
+	}
+	else{
+		return LED_2 - (adc_ch_no - ADC_CH_BEGIN);
+	}
 }
 
 void set_leds_adc_value_empty(uint8_t curr_a_ch){
-	for (uint8_t i=0; i<ADC_COUNT_CHANNELS; i++)
+	for (uint8_t i=0; i<ADC_COUNT_CHANNELS; i++){
 		fprintf_P(led_s_ex(get_ADC_led(i + ADC_CH_BEGIN), 0), MSG_ADC_EMPTY, i + ADC_CH_BEGIN);
+	}
 }
 
 uint8_t init_keyboard(){
 	
 	uint8_t result = load_keyboard_from_eeprom();
 	keyboard.is_repair	= 0;
-	keyboard.is_test	= 0;
 	
 	adc_ch = ADC_CH_BEGIN;
 	
@@ -188,136 +221,134 @@ void start_keyboard(uint8_t change_ch){
 	ADCSRA |= (1<<ADSC);
 }
 
-void repair_or_test_keyboard(uint8_t is_init){
-#ifndef DEBUG
+void repair_keyboard(uint8_t is_init){
 	adc_mapping_s  tmp_mapping;
 	uint8_t fl = 0;
-		
+	
 	static test_keyboard_state_e state;
 	static uint8_t	request_key_code;
-	
-	static uint8_t led_seg;
-	static uint8_t scan_ms;
-	static uint8_t led_seg_on;
+	static uint8_t is_scan_key_completed;
 	
 	if (is_init){
 		keyboard.is_repair	= 1;
 		state = BEGIN_REPAIR_KEYBOARD;
 		return;
 	}
-		
-	
 	
 	switch (state){
 		case BEGIN_REPAIR_KEYBOARD:
-			for (uint8_t i=0; i<MAX_LEDS; i++)
-				clearDisplay(i);
-			
-			request_key_code = 1;	
-			
-			for (uint8_t i=0; i<KEY_COUNT; i++){
-				keyboard.adc_mappings[i].adc_value	= 0;
-				keyboard.adc_mappings[i].key_code = 0;
-				keyboard.adc_mappings[i].channel = 0;
-			}	
-			state	= WAITING_RELEASE_KEY;
+		// перед тестом клавиатуры, очищаем все индикаторы
+		for (uint8_t i=0; i<MAX_LEDS; i++){
+			clearDisplay(i);
+		}
+		
+		request_key_code = 1;
+		
+		for (uint8_t i=0; i<KEY_COUNT; i++){
+			keyboard.adc_mappings[i].adc_value	= 0;
+			keyboard.adc_mappings[i].key_code = 0;
+			keyboard.adc_mappings[i].channel = 0;
+		}
+		
+		state	= WAITING_RELEASE_KEY;
 		break;
 		
 		case WAITING_RELEASE_KEY:
-			
-			fprintf_P(led_s_ex(LED_MAIN, 0), MSG_WAIT);
-			if (!keyboard.is_pressed_key)
-				state = BEGIN_SCAN_KEY;	
-		
+		// дожидаемся отжатия кнопки
+		fprintf_P(led_s_ex(LED_MAIN, 0), MSG_WAIT);
+		if (!keyboard.is_pressed_key){
+			state = BEGIN_SCAN_KEY;
+		}
 		break;
-				
-		case BEGIN_SCAN_KEY:
-			fprintf_P(led_s_ex(LED_MAIN,0), MSG_PRESS, request_key_code);
-			state = SCAN_KEY;
-			keyboard.adc_value = 0;
-			led_seg = 0;
-			led_seg_on = 1;
-			scan_ms = timer_cnt_10ms;
 		
+		case BEGIN_SCAN_KEY:
+		// кнопку отжали, можно начинать скан кнопки
+		fprintf_P(led_s(LED_MAIN), MSG_PRESS, request_key_code);
+		keyboard.adc_value = 0;
+		is_scan_key_completed = 0;
+		state = SCAN_KEY;
 		break;
 		
 		case SCAN_KEY:
-			set_leds_adc_value_empty(keyboard.adc_channel);
-			if (keyboard.is_pressed_key){
-				fprintf_P(led_s_ex(LED_MAIN,0), LMSG_SCAN);
-				if (led_seg == 0)
-					for (int8_t i=0; i<8; i++)
-						setLed(LED_MAIN, 0, i, 0);
-					
-				if (TIME_OFFSET_8(scan_ms, timer_cnt_10ms) > 1){
-					led_seg++;
-					if (led_seg > 6){
-						led_seg = 1;
-						led_seg_on = !led_seg_on;
-					}
-										
-					setLed(LED_MAIN, 0, led_seg, led_seg_on);	
-					
-					scan_ms = timer_cnt_10ms;
-				}
-			}
-			else
-				state = BEGIN_SCAN_KEY;
+		// на определнном индикаторе отображаем значение ADC канала
+		set_leds_adc_value_empty(keyboard.adc_channel);
+		if (keyboard.is_pressed_key){
+			fprintf_P(led_s_ex(LED_MAIN,0), LMSG_SCAN);
+			
 			
 			if (keyboard.adc_value > ADC_MAX_NULL_VALUE){
-				fprintf_P(led_s(LED_MAIN), LMSG_SCAN);
 				fprintf_P(led_s_ex(get_ADC_led(keyboard.adc_channel + ADC_CH_BEGIN), 0),
-									MSG_ADC_VALUE,
-									keyboard.adc_channel + ADC_CH_BEGIN,
-									keyboard.adc_value);
+				MSG_ADC_VALUE,
+				keyboard.adc_channel + ADC_CH_BEGIN,
+				keyboard.adc_value);
+				
 				// в сохраненных значениях кодов ADC текущего канала ищем совпадения кодов
 				// если нашли, значит была нажата ранее обработанная кнопка
 				// TODO сохранение нового кода и определение дубля можно сделать в один проход
-				for (uint8_t i=0; i<KEY_COUNT; i++)
+				for (uint8_t i=0; i<KEY_COUNT; i++){
 					if (keyboard.adc_mappings[i].key_code != 0){
-						if (keyboard.adc_mappings[i].channel == keyboard.adc_channel){
-							if (abs(keyboard.adc_mappings[i].adc_value - keyboard.adc_value) <= ADC_TOLERANCE){
-								keyboard.adc_mappings[i].adc_value = keyboard.adc_value;
-								fprintf_P(led_s(LED_MAIN), MSG_DOUBLE, keyboard.adc_mappings[i].key_code);
-								state = DUPLICATE_KEY;
-								break;
+						if (keyboard.adc_mappings[i].key_code != request_key_code){
+							if (keyboard.adc_mappings[i].channel == keyboard.adc_channel){
+								if (abs(keyboard.adc_mappings[i].adc_value - keyboard.adc_value) <= ADC_TOLERANCE){
+									fprintf_P(led_s(LED_MAIN), MSG_DOUBLE, keyboard.adc_mappings[i].key_code);
+									state = DUPLICATE_KEY;
+									break;
+								}
 							}
 						}
 					}
 					else
-						break;
+					break;
+				}
 				
-								
+				is_scan_key_completed = 1;
+				
 				if (state == DUPLICATE_KEY) break;
 				
-				for (uint8_t i=0; i<KEY_COUNT; i++)
+				for (uint8_t i=0; i<KEY_COUNT; i++){
+					if (keyboard.adc_mappings[i].key_code == request_key_code){
+						if (keyboard.adc_mappings[i].adc_value < keyboard.adc_value){
+							keyboard.adc_mappings[i].adc_value = keyboard.adc_value;
+						}
+						break;
+					}
+					else
 					if (keyboard.adc_mappings[i].key_code == 0){
 						keyboard.adc_mappings[i].channel =  keyboard.adc_channel;
 						keyboard.adc_mappings[i].key_code = request_key_code;
 						keyboard.adc_mappings[i].adc_value = keyboard.adc_value;
 						break;
 					}
-									
-				state = END_SCAN_KEY;					
+				}
 			}
-			
+		}
+		
+		if (is_scan_key_completed){
+			state = END_SCAN_KEY;
+		}
+		
 		break;
-				
+		
 		
 		case END_SCAN_KEY:
-			if (!keyboard.is_pressed_key){
-				request_key_code++;
-				if (request_key_code > KEY_COUNT)
-					state = END_REPAIR_KEYBOARD;
-				else	
-					state = BEGIN_SCAN_KEY;
+		if (!keyboard.is_pressed_key){
+			request_key_code++;
+			if (request_key_code > KEY_COUNT){
+				state = END_REPAIR_KEYBOARD;
 			}
-		
+			else{
+				state = BEGIN_SCAN_KEY;
+			}
+		}
+		else{
+			state = SCAN_KEY;
+		}
 		break;
 		
 		case DUPLICATE_KEY:
-			if (!keyboard.is_pressed_key)
-				state = BEGIN_SCAN_KEY;
+		if (!keyboard.is_pressed_key){
+			state = BEGIN_SCAN_KEY;
+		}
 		break;
 		
 		case END_REPAIR_KEYBOARD:
@@ -335,24 +366,18 @@ void repair_or_test_keyboard(uint8_t is_init){
 					keyboard.adc_mappings[i-1] = tmp_mapping;
 					fl = 1;
 				}
-				
-			
 			}
 		} while (fl);
-		
-		
 		
 		fprintf_P(led_s(LED_MAIN), MSG_EXIT);
 		_delay_ms(1000);
 		clear_all_led();
-		keyboard.is_test = 0;
 		keyboard.is_repair = 0;
 		
 		break;
 	}
-#endif	
+	
 }
-
 
 
 uint8_t load_keyboard_from_eeprom(void){

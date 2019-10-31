@@ -150,14 +150,16 @@
 
 #define SIZE_MEMORY_KEYBOARD ((sizeof(adc_mapping_s) * (KEY_COUNT + 12))) + 1
 
+
+#define KEY_COUNT			24	// общее количество кнопок
+
 #define ADC_COUNT_CHANNELS	2	// кол-во каналов ADC
+#define ADC_PROCESSED_ALL	0x3
+#define ADC_CH_BEGIN		6	// начальный номер adc
 
-#define KEY_COUNT			24 // общее количество кнопок
+#define ADC_MAX_NULL_VALUE	90	// максимальное значение ADC когда не нажата ни одна кнопка
+#define TIME_KEY_REPEAT_10_ms	50	// время автоповтора
 
-// диапазон входов adc
-#define ADC_CH_BEGIN		6
-
-#define ADC_MAX_NULL_VALUE	10 // максимальное значение ADC когда не нажата ни одна кнопка
 
 typedef struct {
 	uint8_t adc_value;
@@ -171,16 +173,10 @@ typedef struct {
 	uint8_t			key_code;
 	uint8_t			adc_value;
 	uint8_t			adc_channel;
-	uint8_t			old_key_codes[ADC_COUNT_CHANNELS];
-	uint8_t			cnt_ms;
-	uint8_t			cnt_key;
 	uint8_t			is_pressed_key; // нажата одна из кнопок
 	
 	unsigned int	is_processed	: 1; // кнопка обработана получателем
 	unsigned int	is_repair		: 1; // происходит обновление кодов клавиатуры
-	unsigned int	is_test			: 1; // происходит тест клавиатуры
-	
-	unsigned int	is_scan_key		: 1;// определение кода нажатой кнопки (подавления дребезга)
 	
 	unsigned int	is_CALC			: 1;
 	unsigned int	is_F			: 1;
@@ -194,7 +190,7 @@ volatile keyboard_s keyboard;
 
 uint8_t init_keyboard();
 void start_keyboard(uint8_t change_ch);
-void repair_or_test_keyboard(uint8_t is_init);
+void repair_keyboard(uint8_t is_init);
 void save_keyboard_to_eeprom(void);
 
 

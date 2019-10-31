@@ -99,22 +99,68 @@ void execute_func(uint8_t key_code){
 	}
 }
 
+uint8_t cnt_key_tmp = 0;
+
+
+
 void scan_keyboard(){
 		
-	fprintf(led_s_ex(LED_MAIN, 0), "%02d F %d", keyboard.key_code, keyboard.is_F);
-	
-	if (!keyboard.is_processed){
+	if (keyboard.is_processed){
 		if (keyboard.key_code != KEY_NULL){
-			if (keyboard.key_code == KEY_F)
-				keyboard.is_F = !keyboard.is_F;
-			else{
-				execute_func(keyboard.key_code | (keyboard.is_F << 7));
-				keyboard.is_F = 0;	
+			fprintf(led_s(LED_MAIN), "%02d F %d", keyboard.key_code, keyboard.is_F);
+			
+			if (keyboard.key_code == 1){
+				cnt_key_tmp++;
+				
 			}
-						
-			keyboard.is_processed = 1;
+			else
+			if (keyboard.key_code > 1){
+				cnt_key_tmp--;
+				
+			}
+			
+			fprintf(led_s(LED_0), "%d", cnt_key_tmp);
+			
+			
 		}
+		
+		keyboard.is_processed = 0;
 	}
+	
+	/*
+	switch (state){
+		case SCAN_WAITING_RELEASE_KEY:
+		if (!keyboard.is_pressed_key){
+			state = SCAN_KEY;
+		}
+		break;
+		
+		case SCAN_KEY:
+		if (keyboard.is_processed){
+			if (keyboard.key_code != KEY_NULL){
+				fprintf(led_s(LED_MAIN), "%02d F %d", keyboard.key_code, keyboard.is_F);
+				
+				if (keyboard.key_code == 1){
+					cnt_key_tmp++;
+					
+				}
+				else
+				if (keyboard.key_code > 1){
+					cnt_key_tmp--;
+					
+				}
+				
+				fprintf(led_s(LED_0), "%d", cnt_key_tmp);
+				
+				
+			}
+			
+			keyboard.is_processed = 0;
+			state = SCAN_WAITING_RELEASE_KEY;
+		}
+		
+		break;
+	}*/
 }
 
 

@@ -77,7 +77,7 @@ int main(void){
 			case DRO_BEGIN_REPAIR_KEYBOARD:
 				disable_channels_interrupts();
 				cli();
-				repair_or_test_keyboard(1);
+				repair_keyboard(1);
 				dro_config.state = DRO_REPAIR_KEYBOARD;
 				sei();
 			break;	
